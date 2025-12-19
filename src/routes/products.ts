@@ -8,10 +8,6 @@ import {
   getCategories,
   getProductStats,
 } from "../controllers/productController";
-import {
-  validateProduct,
-  validateProductUpdate,
-} from "../middleware/validation";
 import { asyncHandler } from "../middleware/errorHandler";
 import { body } from "express-validator";
 
@@ -37,8 +33,8 @@ router.get("/", asyncHandler(getAllProducts));
 router.get("/categories", asyncHandler(getCategories));
 router.get("/stats", asyncHandler(getProductStats)); // New stats route
 router.get("/:id", asyncHandler(getProductById));
-router.post("/", validateProduct, asyncHandler(createProduct));
-router.put("/:id", validateProductUpdate, asyncHandler(updateProduct));
+router.post("/", productValidation, asyncHandler(createProduct));
+router.put("/:id", productValidation, asyncHandler(updateProduct));
 router.delete("/:id", asyncHandler(deleteProduct));
 
 export default router;
