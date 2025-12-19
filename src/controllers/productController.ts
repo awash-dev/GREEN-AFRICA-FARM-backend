@@ -1,19 +1,12 @@
 import { Request, Response } from "express";
-import { getDatabase } from "../config/database";
-import { Product, PaginationParams } from "../types/index";
-import {
-  successResponse,
-  errorResponse,
-  paginatedResponse,
-} from "../utils/response";
+import Product from "../models/Product";
+import { successResponse, paginatedResponse } from "../utils/response";
 import { AppError } from "../middleware/errorHandler";
 
 export async function getAllProducts(req: Request, res: Response) {
-  const db = await getDatabase();
-
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
-  const offset = (page - 1) * limit;
+  const skip = (page - 1) * limit;
 
   // Filtering parameters
   const category = req.query.category as string;
@@ -25,57 +18,40 @@ export async function getAllProducts(req: Request, res: Response) {
     : undefined;
   const search = req.query.search as string;
 
-  // Build dynamic query
-  let whereClause = "";
-  const params: any[] = [];
-  const conditions: string[] = [];
+  // Build MongoDB query
+  const query: any = {};
 
   if (category) {
-    conditions.push("category = ?");
-    params.push(category);
+    query.category = category;
   }
 
-  if (minPrice !== undefined) {
-    conditions.push("price >= ?");
-    params.push(minPrice);
-  }
-
-  if (maxPrice !== undefined) {
-    conditions.push("price <= ?");
-    params.push(maxPrice);
+  if (minPrice !== undefined || maxPrice !== undefined) {
+    query.price = {};
+    if (minPrice !== undefined) query.price.$gte = minPrice;
+    if (maxPrice !== undefined) query.price.$lte = maxPrice;
   }
 
   if (search) {
-    conditions.push("(name LIKE ? OR description LIKE ?)");
-    params.push(`%${search}%`, `%${search}%`);
+    query.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { description: { $regex: search, $options: "i" } },
+    ];
   }
 
-  if (conditions.length > 0) {
-    whereClause = "WHERE " + conditions.join(" AND ");
-  }
-
-  // Get total count
-  const countQuery = `SELECT COUNT(*) as total FROM products ${whereClause}`;
-  const countResult = await db.get(countQuery, params);
-  const total = countResult.total;
-
-  // Get paginated products
-  const query = `
-    SELECT * FROM products 
-    ${whereClause}
-    ORDER BY created_at DESC 
-    LIMIT ? OFFSET ?
-  `;
-  const products = await db.all(query, [...params, limit, offset]);
+  // Get total count and paginated products
+  const total = await Product.countDocuments(query);
+  const products = await Product.find(query)
+    .sort({ created_at: -1 })
+    .skip(skip)
+    .limit(limit);
 
   return paginatedResponse(res, products, page, limit, total);
 }
 
 export async function getProductById(req: Request, res: Response) {
-  const db = await getDatabase();
   const { id } = req.params;
 
-  const product = await db.get("SELECT * FROM products WHERE id = ?", [id]);
+  const product = await Product.findById(id);
 
   if (!product) {
     throw new AppError("Product not found", 404);
@@ -85,219 +61,80 @@ export async function getProductById(req: Request, res: Response) {
 }
 
 export async function createProduct(req: Request, res: Response) {
-  const db = await getDatabase();
-  const {
-    name,
-    description,
-    description_am,
-    description_om,
-    price,
-    stock,
-    category,
-    image_base64,
-  } = req.body;
+  const productData = req.body;
 
-  try {
-    const result = await db.run(
-      `INSERT INTO products (name, description, description_am, description_om, price, stock, category, image_base64) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        name,
-        description || null,
-        description_am || null,
-        description_om || null,
-        price,
-        stock,
-        category || null,
-        image_base64 || null,
-      ]
-    );
+  const newProduct = await Product.create(productData);
 
-    const newProduct = await db.get("SELECT * FROM products WHERE id = ?", [
-      result.lastID,
-    ]);
-
-    return successResponse(
-      res,
-      newProduct,
-      "Product created successfully",
-      201
-    );
-  } catch (error: any) {
-    console.error("Database Error during creation:", error);
-    if (error.code === "SQLITE_READONLY") {
-      throw new AppError(
-        "Database is read-only. This typically happens on platforms like Vercel when using SQLite. Please use a remote database for persistence.",
-        500
-      );
-    }
-    throw error;
-  }
+  return successResponse(res, newProduct, "Product created successfully", 201);
 }
 
 export async function updateProduct(req: Request, res: Response) {
-  const db = await getDatabase();
-  const productId = parseInt(req.params.id);
+  const { id } = req.params;
+  const updateData = req.body;
 
-  if (isNaN(productId)) {
-    throw new AppError("Invalid product ID", 400);
-  }
+  const updatedProduct = await Product.findByIdAndUpdate(
+    id,
+    { ...updateData, updated_at: new Date() },
+    { new: true, runValidators: true }
+  );
 
-  const {
-    name,
-    description,
-    description_am,
-    description_om,
-    price,
-    stock,
-    category,
-    image_base64,
-  } = req.body;
-
-  // Check if product exists
-  const existingProduct = await db.get("SELECT * FROM products WHERE id = ?", [
-    productId,
-  ]);
-
-  if (!existingProduct) {
+  if (!updatedProduct) {
     throw new AppError("Product not found", 404);
   }
 
-  // Build dynamic update query
-  const updates: string[] = [];
-  const params: any[] = [];
-
-  if (name !== undefined) {
-    updates.push("name = ?");
-    params.push(name);
-  }
-
-  if (description !== undefined) {
-    updates.push("description = ?");
-    params.push(description);
-  }
-
-  if (description_am !== undefined) {
-    updates.push("description_am = ?");
-    params.push(description_am);
-  }
-
-  if (description_om !== undefined) {
-    updates.push("description_om = ?");
-    params.push(description_om);
-  }
-
-  if (price !== undefined) {
-    updates.push("price = ?");
-    params.push(price);
-  }
-
-  if (stock !== undefined) {
-    updates.push("stock = ?");
-    params.push(stock);
-  }
-
-  if (category !== undefined) {
-    updates.push("category = ?");
-    params.push(category);
-  }
-
-  if (image_base64 !== undefined) {
-    updates.push("image_base64 = ?");
-    params.push(image_base64);
-  }
-
-  updates.push("updated_at = CURRENT_TIMESTAMP");
-
-  if (updates.length === 1) {
-    // Only updated_at
-    throw new AppError("No fields to update", 400);
-  }
-
-  params.push(productId);
-
-  try {
-    await db.run(
-      `UPDATE products SET ${updates.join(", ")} WHERE id = ?`,
-      params
-    );
-
-    const updatedProduct = await db.get("SELECT * FROM products WHERE id = ?", [
-      productId,
-    ]);
-
-    return successResponse(res, updatedProduct, "Product updated successfully");
-  } catch (error: any) {
-    console.error("Database Error during update:", error);
-    if (error.code === "SQLITE_READONLY") {
-      throw new AppError(
-        "Database is read-only. This typically happens on platforms like Vercel when using SQLite. Please use a remote database for persistence.",
-        500
-      );
-    }
-    throw error;
-  }
+  return successResponse(res, updatedProduct, "Product updated successfully");
 }
 
 export async function deleteProduct(req: Request, res: Response) {
-  const db = await getDatabase();
-  const productId = parseInt(req.params.id);
+  const { id } = req.params;
 
-  if (isNaN(productId)) {
-    throw new AppError("Invalid product ID", 400);
-  }
+  const deletedProduct = await Product.findByIdAndDelete(id);
 
-  // Check if product exists
-  const existingProduct = await db.get("SELECT * FROM products WHERE id = ?", [
-    productId,
-  ]);
-
-  if (!existingProduct) {
+  if (!deletedProduct) {
     throw new AppError("Product not found", 404);
   }
 
-  try {
-    await db.run("DELETE FROM products WHERE id = ?", [productId]);
-    return successResponse(res, null, "Product deleted successfully");
-  } catch (error: any) {
-    console.error("Database Error during deletion:", error);
-    if (error.code === "SQLITE_READONLY") {
-      throw new AppError(
-        "Database is read-only. This typically happens on platforms like Vercel when using SQLite. Please use a remote database for persistence.",
-        500
-      );
-    }
-    throw error;
-  }
+  return successResponse(res, null, "Product deleted successfully");
 }
 
 export async function getCategories(req: Request, res: Response) {
-  const db = await getDatabase();
-  const categories = await db.all(
-    "SELECT DISTINCT category FROM products WHERE category IS NOT NULL"
-  );
-  return successResponse(
-    res,
-    categories.map((c: any) => c.category)
-  );
+  const categories = await Product.distinct("category", {
+    category: { $ne: null },
+  });
+  return successResponse(res, categories);
 }
 
 export async function getProductStats(req: Request, res: Response) {
-  const db = await getDatabase();
+  const stats = await Product.aggregate([
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        lowStock: {
+          $sum: {
+            $cond: [
+              { $and: [{ $lte: ["$stock", 5] }, { $gt: ["$stock", 0] }] },
+              1,
+              0,
+            ],
+          },
+        },
+        outOfStock: {
+          $sum: {
+            $cond: [{ $eq: ["$stock", 0] }, 1, 0],
+          },
+        },
+        totalValue: { $sum: { $multiply: ["$price", "$stock"] } },
+      },
+    },
+  ]);
 
-  const stats = await db.get(`
-        SELECT 
-            COUNT(*) as total,
-            SUM(CASE WHEN stock <= 5 AND stock > 0 THEN 1 ELSE 0 END) as lowStock,
-            SUM(CASE WHEN stock = 0 THEN 1 ELSE 0 END) as outOfStock,
-            SUM(price * stock) as totalValue
-        FROM products
-    `);
+  const defaultStats = {
+    total: 0,
+    lowStock: 0,
+    outOfStock: 0,
+    totalValue: 0,
+  };
 
-  return successResponse(res, {
-    total: stats.total || 0,
-    lowStock: stats.lowStock || 0,
-    outOfStock: stats.outOfStock || 0,
-    totalValue: stats.totalValue || 0,
-  });
+  return successResponse(res, stats[0] || defaultStats);
 }

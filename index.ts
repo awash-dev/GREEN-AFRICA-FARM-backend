@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { initDatabase } from "./src/config/database";
+import { connectMongoDB } from "./src/config/mongodb";
 import productRoutes from "./src/routes/products";
 import { errorHandler } from "./src/middleware/errorHandler";
 
@@ -18,7 +18,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "E-commerce Products API",
+    message: "E-commerce Products API (MongoDB)",
     version: "1.0.0",
     endpoints: {
       products: "/api/products",
@@ -36,7 +36,7 @@ const port = process.env.PORT || 3000;
 
 async function startServer() {
   try {
-    await initDatabase();
+    await connectMongoDB();
     app.listen(port, () => {
       console.log(`Server is running on port ${port}`);
       console.log(`Products API: http://localhost:${port}/api/products`);
