@@ -97,31 +97,52 @@ export async function createProduct(req: Request, res: Response) {
     image_base64,
   } = req.body;
 
-  const result = await db.run(
-    `INSERT INTO products (name, description, description_am, description_om, price, stock, category, image_base64) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      name,
-      description || null,
-      description_am || null,
-      description_om || null,
-      price,
-      stock,
-      category || null,
-      image_base64 || null,
-    ]
-  );
+  try {
+    const result = await db.run(
+      `INSERT INTO products (name, description, description_am, description_om, price, stock, category, image_base64) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        name,
+        description || null,
+        description_am || null,
+        description_om || null,
+        price,
+        stock,
+        category || null,
+        image_base64 || null,
+      ]
+    );
 
-  const newProduct = await db.get("SELECT * FROM products WHERE id = ?", [
-    result.lastID,
-  ]);
+    const newProduct = await db.get("SELECT * FROM products WHERE id = ?", [
+      result.lastID,
+    ]);
 
-  return successResponse(res, newProduct, "Product created successfully", 201);
+    return successResponse(
+      res,
+      newProduct,
+      "Product created successfully",
+      201
+    );
+  } catch (error: any) {
+    console.error("Database Error during creation:", error);
+    if (error.code === "SQLITE_READONLY") {
+      throw new AppError(
+        "Database is read-only. This typically happens on platforms like Vercel when using SQLite. Please use a remote database for persistence.",
+        500
+      );
+    }
+    throw error;
+  }
 }
 
 export async function updateProduct(req: Request, res: Response) {
   const db = await getDatabase();
-  const { id } = req.params;
+  const productId = parseInt(req.params.id);
+
+  if (isNaN(productId)) {
+    throw new AppError("Invalid product ID", 400);
+  }
+
   const {
     name,
     description,
@@ -135,7 +156,7 @@ export async function updateProduct(req: Request, res: Response) {
 
   // Check if product exists
   const existingProduct = await db.get("SELECT * FROM products WHERE id = ?", [
-    id,
+    productId,
   ]);
 
   if (!existingProduct) {
@@ -193,36 +214,61 @@ export async function updateProduct(req: Request, res: Response) {
     throw new AppError("No fields to update", 400);
   }
 
-  params.push(id);
+  params.push(productId);
 
-  await db.run(
-    `UPDATE products SET ${updates.join(", ")} WHERE id = ?`,
-    params
-  );
+  try {
+    await db.run(
+      `UPDATE products SET ${updates.join(", ")} WHERE id = ?`,
+      params
+    );
 
-  const updatedProduct = await db.get("SELECT * FROM products WHERE id = ?", [
-    id,
-  ]);
+    const updatedProduct = await db.get("SELECT * FROM products WHERE id = ?", [
+      productId,
+    ]);
 
-  return successResponse(res, updatedProduct, "Product updated successfully");
+    return successResponse(res, updatedProduct, "Product updated successfully");
+  } catch (error: any) {
+    console.error("Database Error during update:", error);
+    if (error.code === "SQLITE_READONLY") {
+      throw new AppError(
+        "Database is read-only. This typically happens on platforms like Vercel when using SQLite. Please use a remote database for persistence.",
+        500
+      );
+    }
+    throw error;
+  }
 }
 
 export async function deleteProduct(req: Request, res: Response) {
   const db = await getDatabase();
-  const { id } = req.params;
+  const productId = parseInt(req.params.id);
+
+  if (isNaN(productId)) {
+    throw new AppError("Invalid product ID", 400);
+  }
 
   // Check if product exists
   const existingProduct = await db.get("SELECT * FROM products WHERE id = ?", [
-    id,
+    productId,
   ]);
 
   if (!existingProduct) {
     throw new AppError("Product not found", 404);
   }
 
-  await db.run("DELETE FROM products WHERE id = ?", [id]);
-
-  return successResponse(res, null, "Product deleted successfully");
+  try {
+    await db.run("DELETE FROM products WHERE id = ?", [productId]);
+    return successResponse(res, null, "Product deleted successfully");
+  } catch (error: any) {
+    console.error("Database Error during deletion:", error);
+    if (error.code === "SQLITE_READONLY") {
+      throw new AppError(
+        "Database is read-only. This typically happens on platforms like Vercel when using SQLite. Please use a remote database for persistence.",
+        500
+      );
+    }
+    throw error;
+  }
 }
 
 export async function getCategories(req: Request, res: Response) {

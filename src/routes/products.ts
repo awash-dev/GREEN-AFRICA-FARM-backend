@@ -12,6 +12,7 @@ import {
   validateProduct,
   validateProductUpdate,
 } from "../middleware/validation";
+import { asyncHandler } from "../middleware/errorHandler";
 import { body } from "express-validator";
 
 const router = Router();
@@ -32,12 +33,12 @@ const productValidation = [
   body("image_base64").optional().isString(),
 ];
 
-router.get("/", getAllProducts);
-router.get("/categories", getCategories);
-router.get("/stats", getProductStats); // New stats route
-router.get("/:id", getProductById);
-router.post("/", validateProduct, createProduct);
-router.put("/:id", validateProductUpdate, updateProduct);
-router.delete("/:id", deleteProduct);
+router.get("/", asyncHandler(getAllProducts));
+router.get("/categories", asyncHandler(getCategories));
+router.get("/stats", asyncHandler(getProductStats)); // New stats route
+router.get("/:id", asyncHandler(getProductById));
+router.post("/", validateProduct, asyncHandler(createProduct));
+router.put("/:id", validateProductUpdate, asyncHandler(updateProduct));
+router.delete("/:id", asyncHandler(deleteProduct));
 
 export default router;
