@@ -1,0 +1,50 @@
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import { initDatabase } from "./src/config/database";
+import productRoutes from "./src/routes/products";
+import { errorHandler } from "./src/middleware/errorHandler";
+
+dotenv.config();
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: "10mb" })); // Increased limit for base64 images
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Routes
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "E-commerce Products API",
+    version: "1.0.0",
+    endpoints: {
+      products: "/api/products",
+    },
+  });
+});
+
+app.use("/api/products", productRoutes);
+
+// Error handling middleware (must be last)
+app.use(errorHandler);
+
+// Initialize database and start server
+const port = process.env.PORT || 3000;
+
+async function startServer() {
+  try {
+    await initDatabase();
+    app.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+      console.log(`Products API: http://localhost:${port}/api/products`);
+    });
+  } catch (error) {
+    console.error("Failed to start server:", error);
+    process.exit(1);
+  }
+}
+
+startServer();
