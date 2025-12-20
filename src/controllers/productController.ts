@@ -2,6 +2,11 @@ import { Request, Response } from "express";
 import Product from "../models/Product";
 import { successResponse, paginatedResponse } from "../utils/response";
 import { AppError } from "../middleware/errorHandler";
+import ProductModel from "../models/Product";
+
+// Simple in-memory cache
+let productCache: { data: any; timestamp: number } | null = null;
+const CACHE_TTL = 60 * 1000; // 60 seconds
 
 export async function getAllProducts(req: Request, res: Response) {
   const page = parseInt(req.query.page as string) || 1;
@@ -18,6 +23,22 @@ export async function getAllProducts(req: Request, res: Response) {
     : undefined;
   const search = req.query.search as string;
 
+  // Return cached data if available and no query params
+  const isDefaultQuery =
+    !category &&
+    minPrice === undefined &&
+    maxPrice === undefined &&
+    !search &&
+    page === 1 &&
+    limit === 10;
+  if (
+    isDefaultQuery &&
+    productCache &&
+    Date.now() - productCache.timestamp < CACHE_TTL
+  ) {
+    return res.json(productCache.data);
+  }
+
   // Build MongoDB query
   const query: any = {};
 
@@ -32,20 +53,28 @@ export async function getAllProducts(req: Request, res: Response) {
   }
 
   if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: "i" } },
-      { description: { $regex: search, $options: "i" } },
-    ];
+    // Use text index search for high performance
+    query.$text = { $search: search };
   }
 
   // Get total count and paginated products
-  const total = await Product.countDocuments(query);
-  const products = await Product.find(query)
-    .sort({ created_at: -1 })
-    .skip(skip)
-    .limit(limit);
+  const [total, products] = await Promise.all([
+    Product.countDocuments(query),
+    Product.find(query)
+      .sort(search ? { score: { $meta: "textScore" } } : { created_at: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(), // Use lean for better performance (plain object)
+  ]);
 
-  return paginatedResponse(res, products, page, limit, total);
+  const response = paginatedResponse(res, products, page, limit, total);
+
+  // Cache default query result
+  if (isDefaultQuery) {
+    productCache = { data: (response as any).data, timestamp: Date.now() };
+  }
+
+  return response;
 }
 
 export async function getProductById(req: Request, res: Response) {
@@ -65,6 +94,7 @@ export async function createProduct(req: Request, res: Response) {
 
   const newProduct = await Product.create(productData);
 
+  productCache = null; // Invalidate cache
   return successResponse(res, newProduct, "Product created successfully", 201);
 }
 
@@ -82,6 +112,7 @@ export async function updateProduct(req: Request, res: Response) {
     throw new AppError("Product not found", 404);
   }
 
+  productCache = null; // Invalidate cache
   return successResponse(res, updatedProduct, "Product updated successfully");
 }
 
@@ -94,6 +125,7 @@ export async function deleteProduct(req: Request, res: Response) {
     throw new AppError("Product not found", 404);
   }
 
+  productCache = null; // Invalidate cache
   return successResponse(res, null, "Product deleted successfully");
 }
 
