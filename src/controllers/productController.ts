@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import Product from "../models/Product";
 import { successResponse, paginatedResponse } from "../utils/response";
 import { AppError } from "../middleware/errorHandler";
@@ -63,8 +64,7 @@ export async function getAllProducts(req: Request, res: Response) {
     Product.find(query)
       .sort(search ? { score: { $meta: "textScore" } } : { created_at: -1 })
       .skip(skip)
-      .limit(limit)
-      .lean(), // Use lean for better performance (plain object)
+      .limit(limit),
   ]);
 
   const response = paginatedResponse(res, products, page, limit, total);
@@ -79,6 +79,10 @@ export async function getAllProducts(req: Request, res: Response) {
 
 export async function getProductById(req: Request, res: Response) {
   const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new AppError("Invalid product ID format", 400);
+  }
 
   const product = await Product.findById(id);
 
@@ -102,6 +106,10 @@ export async function updateProduct(req: Request, res: Response) {
   const { id } = req.params;
   const updateData = req.body;
 
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new AppError("Invalid product ID format", 400);
+  }
+
   const updatedProduct = await Product.findByIdAndUpdate(
     id,
     { ...updateData, updated_at: new Date() },
@@ -118,6 +126,10 @@ export async function updateProduct(req: Request, res: Response) {
 
 export async function deleteProduct(req: Request, res: Response) {
   const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new AppError("Invalid product ID format", 400);
+  }
 
   const deletedProduct = await Product.findByIdAndDelete(id);
 
