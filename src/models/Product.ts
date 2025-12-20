@@ -7,8 +7,8 @@ export interface IProduct extends Document {
   description_om?: string;
   price: number;
   stock: number;
-  category?: string;
-  image_base64?: string;
+  unit?: string;
+  origin?: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -23,6 +23,8 @@ const ProductSchema: Schema = new Schema(
     stock: { type: Number, required: true, min: 0, default: 0 },
     category: { type: String },
     image_base64: { type: String },
+    unit: { type: String, default: "unit" },
+    origin: { type: String },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
