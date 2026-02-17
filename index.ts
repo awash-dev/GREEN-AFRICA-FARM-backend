@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { connectMongoDB } from "./src/config/mongodb";
 import productRoutes from "./src/routes/products";
+import teamRoutes from "./src/routes/team";
 import { errorHandler } from "./src/middleware/errorHandler";
 
 dotenv.config();
@@ -18,15 +19,17 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "E-commerce Products API (MongoDB)",
+    message: "Green Africa Farm API (MongoDB)",
     version: "1.0.0",
     endpoints: {
       products: "/api/products",
+      team: "/api/team",
     },
   });
 });
 
 app.use("/api/products", productRoutes);
+app.use("/api/team", teamRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
