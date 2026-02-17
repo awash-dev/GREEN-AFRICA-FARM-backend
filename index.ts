@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { connectMongoDB } from "./src/config/mongodb";
 import productRoutes from "./src/routes/products";
 import teamRoutes from "./src/routes/team";
+import orderRoutes from "./src/routes/orderRoutes";
 import { errorHandler } from "./src/middleware/errorHandler";
 
 dotenv.config();
@@ -24,12 +25,14 @@ app.get("/", (req, res) => {
     endpoints: {
       products: "/api/products",
       team: "/api/team",
+      orders: "/api/orders",
     },
   });
 });
 
 app.use("/api/products", productRoutes);
 app.use("/api/team", teamRoutes);
+app.use("/api/orders", orderRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

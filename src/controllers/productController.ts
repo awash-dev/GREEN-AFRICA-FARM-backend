@@ -54,15 +54,25 @@ export async function getAllProducts(req: Request, res: Response) {
   }
 
   if (search) {
-    // Use text index search for high performance
-    query.$text = { $search: search };
+    // Regex search for title, description, and localized fields
+    // This allows partial matching and covers all languages
+    // Escape special characters to prevent invalid regex
+    const sanitizedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchRegex = new RegExp(sanitizedSearch, "i");
+    query.$or = [
+      { name: searchRegex },
+      { description: searchRegex },
+      { description_am: searchRegex },
+      { description_om: searchRegex },
+      { category: searchRegex },
+    ];
   }
 
   // Get total count and paginated products
   const [total, products] = await Promise.all([
     Product.countDocuments(query),
     Product.find(query)
-      .sort(search ? { score: { $meta: "textScore" } } : { created_at: -1 })
+      .sort({ created_at: -1 })
       .skip(skip)
       .limit(limit),
   ]);
