@@ -17,8 +17,8 @@ export interface IOrder extends Document {
     }>;
     total: number;
     status: 'pending' | 'processing' | 'delivered' | 'cancelled';
-    createdAt: Date;
-    updatedAt: Date;
+    created_at: Date;
+    updated_at: Date;
 }
 
 const OrderSchema: Schema = new Schema({
@@ -42,6 +42,15 @@ const OrderSchema: Schema = new Schema({
         enum: ['pending', 'processing', 'delivered', 'cancelled'],
         default: 'pending'
     }
-}, { timestamps: true });
+}, { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } });
+
+OrderSchema.set("toJSON", {
+    virtuals: true,
+    versionKey: false,
+    transform: function (doc, ret: any) {
+        ret.id = ret._id.toString();
+        // delete ret._id;
+    },
+});
 
 export default mongoose.model<IOrder>("Order", OrderSchema);

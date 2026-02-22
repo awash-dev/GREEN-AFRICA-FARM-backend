@@ -3,42 +3,30 @@ import mongoose from "mongoose";
 import Product from "../models/Product";
 import { successResponse, paginatedResponse } from "../utils/response";
 import { AppError } from "../middleware/errorHandler";
-import ProductModel from "../models/Product";
+import { validationResult } from "express-validator";
 
-// Simple in-memory cache
-let productCache: { data: any; timestamp: number } | null = null;
-const CACHE_TTL = 60 * 1000; // 60 seconds
+// Enhanced in-memory cache with support for multiple queries
+const queryCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 300 * 1000; // 5 minutes
+const CATEGORY_CACHE_TTL = 600 * 1000; // 10 minutes
 
 export async function getAllProducts(req: Request, res: Response) {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
 
+  // Cache key based on query parameters
+  const cacheKey = JSON.stringify(req.query);
+  const cached = queryCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return res.json(cached.data);
+  }
+
   // Filtering parameters
   const category = req.query.category as string;
-  const minPrice = req.query.minPrice
-    ? parseFloat(req.query.minPrice as string)
-    : undefined;
-  const maxPrice = req.query.maxPrice
-    ? parseFloat(req.query.maxPrice as string)
-    : undefined;
+  const minPrice = req.query.minPrice ? parseFloat(req.query.minPrice as string) : undefined;
+  const maxPrice = req.query.maxPrice ? parseFloat(req.query.maxPrice as string) : undefined;
   const search = req.query.search as string;
-
-  // Return cached data if available and no query params
-  const isDefaultQuery =
-    !category &&
-    minPrice === undefined &&
-    maxPrice === undefined &&
-    !search &&
-    page === 1 &&
-    limit === 10;
-  if (
-    isDefaultQuery &&
-    productCache &&
-    Date.now() - productCache.timestamp < CACHE_TTL
-  ) {
-    return res.json(productCache.data);
-  }
 
   // Build MongoDB query
   const query: any = {};
@@ -54,37 +42,50 @@ export async function getAllProducts(req: Request, res: Response) {
   }
 
   if (search) {
-    // Regex search for title, description, and localized fields
-    // This allows partial matching and covers all languages
-    // Escape special characters to prevent invalid regex
     const sanitizedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const searchRegex = new RegExp(sanitizedSearch, "i");
     query.$or = [
       { name: searchRegex },
-      { description: searchRegex },
-      { description_am: searchRegex },
-      { description_om: searchRegex },
+      { name_am: searchRegex },
+      { name_om: searchRegex },
       { category: searchRegex },
     ];
   }
 
-  // Get total count and paginated products
   const [total, products] = await Promise.all([
     Product.countDocuments(query),
     Product.find(query)
       .sort({ created_at: -1 })
       .skip(skip)
-      .limit(limit),
+      .limit(limit)
+      .lean(),
   ]);
 
-  const response = paginatedResponse(res, products, page, limit, total);
+  // Adjust products for frontend
+  const formattedProducts = products.map((p: any) => {
+    return {
+      ...p,
+      id: p._id.toString(),
+      _id: p._id.toString()
+    };
+  });
 
-  // Cache default query result
-  if (isDefaultQuery) {
-    productCache = { data: (response as any).data, timestamp: Date.now() };
-  }
+  // Build response data
+  const responseData = {
+    success: true,
+    data: formattedProducts,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit)
+    }
+  };
 
-  return response;
+  // Cache the query result
+  queryCache.set(cacheKey, { data: responseData, timestamp: Date.now() });
+
+  return res.status(200).json(responseData);
 }
 
 export async function getProductById(req: Request, res: Response) {
@@ -94,35 +95,78 @@ export async function getProductById(req: Request, res: Response) {
     throw new AppError("Invalid product ID format", 400);
   }
 
-  const product = await Product.findById(id);
+  const product = await Product.findById(id).lean();
 
   if (!product) {
     throw new AppError("Product not found", 404);
   }
 
-  return successResponse(res, product);
+  const formattedProduct = {
+    ...product,
+    id: (product._id as any).toString()
+  };
+
+  return successResponse(res, formattedProduct);
 }
 
 export async function createProduct(req: Request, res: Response) {
-  const productData = req.body;
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new AppError(errors.array()[0].msg, 400);
+  }
+
+  const productData = { ...req.body };
+
+  // Prioritize image_base64 by clearing image_url if provided
+  if (productData.image_base64) {
+    productData.image_url = "";
+  }
+
+  // Ensure price and stock are numbers
+  if (productData.price) productData.price = Number(productData.price);
+  if (productData.stock) productData.stock = Number(productData.stock);
 
   const newProduct = await Product.create(productData);
 
-  productCache = null; // Invalidate cache
+  queryCache.clear(); // Invalidate all query caches
   return successResponse(res, newProduct, "Product created successfully", 201);
 }
 
 export async function updateProduct(req: Request, res: Response) {
   const { id } = req.params;
-  const updateData = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new AppError("Invalid product ID format", 400);
   }
 
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new AppError(errors.array()[0].msg, 400);
+  }
+
+  const updateData = { ...req.body };
+
+  // Remove fields that shouldn't be updated directly
+  delete updateData._id;
+  delete updateData.id;
+
+  // Ensure price and stock are updated correctly from body
+  // Ensure image_base64 is handled and prioritize it
+  if (req.body.image_base64) {
+    updateData.image_base64 = req.body.image_base64;
+    updateData.image_url = "";
+  }
+
+  // Ensure we don't accidentally remove _id if it's sent
+  delete updateData._id;
+
+  // Ensure numerical fields are numbers
+  if (updateData.price !== undefined) updateData.price = Number(updateData.price);
+  if (updateData.stock !== undefined) updateData.stock = Number(updateData.stock);
+
   const updatedProduct = await Product.findByIdAndUpdate(
     id,
-    { ...updateData, updated_at: new Date() },
+    updateData,
     { new: true, runValidators: true }
   );
 
@@ -130,7 +174,7 @@ export async function updateProduct(req: Request, res: Response) {
     throw new AppError("Product not found", 404);
   }
 
-  productCache = null; // Invalidate cache
+  queryCache.clear(); // Invalidate all query caches
   return successResponse(res, updatedProduct, "Product updated successfully");
 }
 
@@ -147,15 +191,25 @@ export async function deleteProduct(req: Request, res: Response) {
     throw new AppError("Product not found", 404);
   }
 
-  productCache = null; // Invalidate cache
+  queryCache.clear(); // Invalidate all query caches
   return successResponse(res, null, "Product deleted successfully");
 }
 
 export async function getCategories(req: Request, res: Response) {
+  const cacheKey = 'categories';
+  const cached = queryCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CATEGORY_CACHE_TTL) {
+    return res.json(cached.data);
+  }
+
   const categories = await Product.distinct("category", {
     category: { $ne: null },
   });
-  return successResponse(res, categories);
+
+  const responseData = { success: true, data: categories };
+  queryCache.set(cacheKey, { data: responseData, timestamp: Date.now() });
+
+  return res.status(200).json(responseData);
 }
 
 export async function getProductStats(req: Request, res: Response) {

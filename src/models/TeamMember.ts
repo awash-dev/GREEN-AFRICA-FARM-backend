@@ -9,6 +9,7 @@ export interface ITeamMember extends Document {
     bio_am?: string;
     bio_om?: string;
     image_base64?: string;
+    image_url?: string;
     order: number;
     is_active: boolean;
     created_at: Date;
@@ -24,7 +25,8 @@ const TeamMemberSchema: Schema = new Schema(
         bio: { type: String },
         bio_am: { type: String },
         bio_om: { type: String },
-        image_base64: { type: String }, // CEO/Founder photos stored as base64
+        image_base64: { type: String },
+        image_url: { type: String }, // Use Cloudinary for leadership photos too
         order: { type: Number, default: 0 },
         is_active: { type: Boolean, default: true },
     },
@@ -36,9 +38,9 @@ const TeamMemberSchema: Schema = new Schema(
 TeamMemberSchema.set("toJSON", {
     virtuals: true,
     versionKey: false,
-    transform: function (doc, ret) {
-        ret.id = ret._id;
-        delete ret._id;
+    transform: function (doc, ret: any) {
+        ret.id = ret._id.toString();
+        // delete ret._id;
     },
 });
 

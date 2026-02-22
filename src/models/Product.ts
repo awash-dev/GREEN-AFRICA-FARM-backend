@@ -2,10 +2,12 @@ import mongoose, { Schema, Document } from "mongoose";
 
 export interface IProduct extends Document {
   name: string;
-  description?: string;
-  description_am?: string;
-  description_om?: string;
+  name_am?: string;
+  name_om?: string;
   price: number;
+  category?: string;
+  image_url?: string;
+  image_base64?: string;
   stock: number;
   unit?: string;
   origin?: string;
@@ -16,13 +18,13 @@ export interface IProduct extends Document {
 const ProductSchema: Schema = new Schema(
   {
     name: { type: String, required: true, index: true },
-    description: { type: String },
-    description_am: { type: String },
-    description_om: { type: String },
+    name_am: { type: String, index: true },
+    name_om: { type: String, index: true },
     price: { type: Number, required: true, min: 0, index: true },
-    stock: { type: Number, required: true, min: 0, default: 0 },
     category: { type: String, index: true },
+    image_url: { type: String },
     image_base64: { type: String },
+    stock: { type: Number, default: 0, min: 0 },
     unit: { type: String, default: "unit" },
     origin: { type: String },
   },
@@ -32,15 +34,15 @@ const ProductSchema: Schema = new Schema(
 );
 
 // Search index for text-based search
-ProductSchema.index({ name: "text", description: "text" });
+ProductSchema.index({ name: "text", name_am: "text", name_om: "text" });
 
 // To match the frontend expected 'id' field instead of '_id'
 ProductSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
-  transform: function (doc, ret) {
-    ret.id = ret._id;
-    delete ret._id;
+  transform: function (doc, ret: any) {
+    ret.id = ret._id.toString();
+    // delete ret._id;
   },
 });
 

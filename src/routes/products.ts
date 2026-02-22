@@ -13,28 +13,43 @@ import { body } from "express-validator";
 
 const router = Router();
 
-// Validation for product creation/update
-const productValidation = [
+// Validation for product creation
+const productCreateValidation = [
   body("name").notEmpty().withMessage("Name is required"),
   body("price")
     .isFloat({ min: 0 })
     .withMessage("Price must be a positive number"),
   body("stock")
+    .optional()
     .isInt({ min: 0 })
     .withMessage("Stock must be a non-negative integer"),
   body("category").optional().isString(),
-  body("description").optional().isString(),
-  body("description_am").optional().isString(),
-  body("description_om").optional().isString(),
-  body("image_base64").optional().isString(),
+  body("name_am").optional().isString(),
+  body("name_om").optional().isString(),
+];
+
+// Validation for product update (all fields optional)
+const productUpdateValidation = [
+  body("name").optional().notEmpty().withMessage("Name cannot be empty"),
+  body("price")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Price must be a positive number"),
+  body("stock")
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage("Stock must be a non-negative integer"),
+  body("category").optional().isString(),
+  body("name_am").optional().isString(),
+  body("name_om").optional().isString(),
 ];
 
 router.get("/", asyncHandler(getAllProducts));
 router.get("/categories", asyncHandler(getCategories));
-router.get("/stats", asyncHandler(getProductStats)); // New stats route
+router.get("/stats", asyncHandler(getProductStats));
 router.get("/:id", asyncHandler(getProductById));
-router.post("/", productValidation, asyncHandler(createProduct));
-router.put("/:id", productValidation, asyncHandler(updateProduct));
+router.post("/", productCreateValidation, asyncHandler(createProduct));
+router.put("/:id", productUpdateValidation, asyncHandler(updateProduct));
 router.delete("/:id", asyncHandler(deleteProduct));
 
 export default router;

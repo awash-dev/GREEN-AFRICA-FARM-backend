@@ -1,20 +1,26 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import compression from "compression";
 import { connectMongoDB } from "./src/config/mongodb";
 import productRoutes from "./src/routes/products";
 import teamRoutes from "./src/routes/team";
 import orderRoutes from "./src/routes/orderRoutes";
 import { errorHandler } from "./src/middleware/errorHandler";
 
+process.env.DOTENV_KEY = ""; // Suppress dotenvx warnings
 dotenv.config();
 
 const app = express();
 
 // Middleware
+app.use(compression());
 app.use(cors());
 app.use(express.json({ limit: "10mb" })); // Increased limit for base64 images
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+app.use(express.static("public"));
+app.use("/uploads", express.static("public/uploads"));
 
 // Routes
 app.get("/", (req, res) => {
@@ -43,9 +49,9 @@ const port = process.env.PORT || 3000;
 async function startServer() {
   try {
     await connectMongoDB();
-    app.listen(port, () => {
+    app.listen(Number(port), "0.0.0.0", () => {
       console.log(`Server is running on port ${port}`);
-      console.log(`Products API: http://localhost:${port}/api/products`);
+      console.log(`Products API: http://127.0.0.1:${port}/api/products`);
     });
   } catch (error) {
     console.error("Failed to start server:", error);
